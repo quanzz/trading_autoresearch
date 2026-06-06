@@ -151,7 +151,11 @@ class Account:
                 if order.quantity >= pos.quantity:
                     # Close existing position
                     close_qty = pos.quantity
-                    self.cash += close_qty * exec_price * self.multiplier
+                    if pos.direction == Direction.LONG:
+                        # Closing long: undo line 137 deduction + receive sale proceeds
+                        self.cash += close_qty * exec_price * self.multiplier * 2
+                    # else: closing short — line 137 deduction was correct
+                    #        (buying to cover costs money), no refund needed
                     remaining = order.quantity - pos.quantity
                     if remaining > 0:
                         # Open new position in opposite direction
@@ -162,7 +166,9 @@ class Account:
                         del self.positions[symbol]
                 else:
                     # Partially close
-                    self.cash += order.quantity * exec_price * self.multiplier
+                    if pos.direction == Direction.LONG:
+                        self.cash += order.quantity * exec_price * self.multiplier * 2
+                    # else: partial close of short, line 137 deduction stands
                     pos.quantity -= order.quantity
         else:
             # New position
