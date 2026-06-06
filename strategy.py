@@ -336,9 +336,9 @@ def create_strategy(config: dict) -> Strategy:
     Factory function that creates the active strategy.
     The agent modifies this to switch strategies or pass custom parameters.
     """
-    strategy = SmaCrossStrategy(config)
-    # Override default parameters here:
-    # strategy.fast_period = 10
-    # strategy.slow_period = 30
-    # strategy.position_size = 2
+    strategy = BollingerBreakoutStrategy(config)
+    # Tighter bands for more signals, wider for mean reversion capture
+    strategy.period = 15
+    strategy.std_multiplier = 2.5
+    strategy.position_size = 1
     return strategy
