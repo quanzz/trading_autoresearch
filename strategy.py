@@ -327,6 +327,93 @@ class MomentumStrategy(Strategy):
 
 
 # ===========================================================================
+# Strategy 4: RSI Mean Reversion with Tight Risk Control
+# ===========================================================================
+
+class RsiReversionStrategy(Strategy):
+    """
+    RSI-based mean reversion with asymmetric risk/reward.
+    - BUY when RSI < oversold threshold (panic selling)
+    - SELL when RSI > overbought threshold (greedy buying)
+    - Exit at RSI midpoint, or via hard stop/take-profit
+    - Large number of small trades with positive expectancy
+    """
+
+    def __init__(self, config: dict):
+        super().__init__(config)
+        self.name = "RSI Reversion"
+        self.rsi_period = 7
+        self.oversold = 25
+        self.overbought = 75
+        self.position_size = 1
+        self.stop_loss_pct = 0.01       # 1% stop — cut losses fast
+        self.take_profit_pct = 0.025    # 2.5% target — asymmetric R:R
+        self.max_hold_bars = 480        # Max 8 hours hold time
+
+    def init(self, lookback):
+        self._entry_bar = -9999
+        self._entry_price = 0.0
+
+    def on_bar(self, i: int, bar: Bar, account: Account,
+               lookback: List[Bar]) -> List[Order]:
+        if i < self.rsi_period + 2:
+            return []
+
+        closes = [b.close for b in lookback]
+        curr_rsi = rsi(closes, self.rsi_period)
+
+        sym = self.symbol
+        pos = self.get_position(account)
+        bars_held = i - self._entry_bar if pos is not None else 0
+
+        # === EXITS ===
+        if pos is not None:
+            entry_px = self._entry_price
+
+            # 1. Stop loss / Take profit
+            if pos.direction == Direction.LONG:
+                pnl_pct = (bar.close - entry_px) / entry_px
+                if pnl_pct <= -self.stop_loss_pct:
+                    return [Order(sym, Direction.SHORT, pos.quantity)]
+                if pnl_pct >= self.take_profit_pct:
+                    return [Order(sym, Direction.SHORT, pos.quantity)]
+                # Exit at RSI midpoint recovery
+                if bars_held > 10 and curr_rsi >= 50:
+                    return [Order(sym, Direction.SHORT, pos.quantity)]
+            else:  # SHORT
+                pnl_pct = (entry_px - bar.close) / entry_px
+                if pnl_pct <= -self.stop_loss_pct:
+                    return [Order(sym, Direction.LONG, pos.quantity)]
+                if pnl_pct >= self.take_profit_pct:
+                    return [Order(sym, Direction.LONG, pos.quantity)]
+                if bars_held > 10 and curr_rsi <= 50:
+                    return [Order(sym, Direction.LONG, pos.quantity)]
+
+            # 2. Time stop
+            if bars_held >= self.max_hold_bars:
+                if pos.direction == Direction.LONG:
+                    return [Order(sym, Direction.SHORT, pos.quantity)]
+                else:
+                    return [Order(sym, Direction.LONG, pos.quantity)]
+
+        # === ENTRIES (only when flat) ===
+        if pos is None:
+            # Oversold — buy the panic
+            if curr_rsi < self.oversold:
+                self._entry_bar = i
+                self._entry_price = bar.close
+                return [Order(sym, Direction.LONG, self.position_size)]
+
+            # Overbought — sell the euphoria
+            elif curr_rsi > self.overbought:
+                self._entry_bar = i
+                self._entry_price = bar.close
+                return [Order(sym, Direction.SHORT, self.position_size)]
+
+        return []
+
+
+# ===========================================================================
 # Active Strategy Selection
 # ===========================================================================
 # The agent modifies create_strategy() to switch strategies or change params.
@@ -336,9 +423,12 @@ def create_strategy(config: dict) -> Strategy:
     Factory function that creates the active strategy.
     The agent modifies this to switch strategies or pass custom parameters.
     """
-    strategy = BollingerBreakoutStrategy(config)
-    # Tighter bands for more signals, wider for mean reversion capture
-    strategy.period = 15
-    strategy.std_multiplier = 2.5
+    strategy = RsiReversionStrategy(config)
+    strategy.rsi_period = 7
+    strategy.oversold = 25
+    strategy.overbought = 75
     strategy.position_size = 1
+    strategy.stop_loss_pct = 0.01
+    strategy.take_profit_pct = 0.025
+    strategy.max_hold_bars = 480
     return strategy
