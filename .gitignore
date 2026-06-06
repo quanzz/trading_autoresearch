@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+worktrees/
+
+# Data files (keep small samples, ignore large CSVs)
+data/*.csv
+!data/sample_*.csv
+
+# Results file (untracked, like karpathy's)
+results.tsv
+
+# IDE
+.vscode/
+.idea/
