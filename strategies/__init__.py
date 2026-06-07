@@ -60,11 +60,11 @@ def create_strategy(config: dict) -> Strategy:
         RsiReversionStrategy   — RSI 均值回归 + 严格风险控制
     """
     strategy = RsiReversionStrategy(config)
-    strategy.rsi_period = 7
-    strategy.oversold = 25
-    strategy.overbought = 75
+    strategy.rsi_period = 14
+    strategy.oversold = 20
+    strategy.overbought = 80
     strategy.position_size = 1
-    strategy.stop_loss_pct = 0.01
-    strategy.take_profit_pct = 0.025
+    strategy.stop_loss_pct = 0.015
+    strategy.take_profit_pct = 0.03
     strategy.max_hold_bars = 480
     return strategy
