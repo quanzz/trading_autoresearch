@@ -20,6 +20,7 @@ from strategies.sma_cross import SmaCrossStrategy
 from strategies.bollinger_breakout import BollingerBreakoutStrategy
 from strategies.momentum_volume import MomentumStrategy
 from strategies.rsi_reversion import RsiReversionStrategy
+from strategies.enhanced_momentum import EnhancedMomentumStrategy
 
 # Re-export indicator helpers for convenience
 # 重新导出指标辅助函数以便使用
@@ -59,12 +60,12 @@ def create_strategy(config: dict) -> Strategy:
         MomentumStrategy       — 动量 + 成交量过滤
         RsiReversionStrategy   — RSI 均值回归 + 严格风险控制
     """
-    strategy = RsiReversionStrategy(config)
-    strategy.rsi_period = 14
-    strategy.oversold = 20
-    strategy.overbought = 80
+    strategy = EnhancedMomentumStrategy(config)
+    strategy.momentum_period = 8
+    strategy.volume_period = 15
+    strategy.volume_threshold = 1.1
     strategy.position_size = 1
     strategy.stop_loss_pct = 0.015
     strategy.take_profit_pct = 0.03
-    strategy.max_hold_bars = 480
+    strategy.max_hold_bars = 240
     return strategy
