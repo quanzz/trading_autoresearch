@@ -1,38 +1,34 @@
 """
-Enhanced Momentum Strategy with Risk Management.
+Dual Channel Breakout Strategy.
 
-增强动量策略（含风险管理）。
+双通道突破策略。
+Use long channel for trend direction, short channel for entry timing.
 """
 
 from typing import List
 
 from backtest.account import Bar, Order, Direction, OrderType, Account
-from backtest.strategy_base import Strategy, sma
+from backtest.strategy_base import Strategy
 
 
-class EnhancedMomentumStrategy(Strategy):
+class DualChannelStrategy(Strategy):
     """
-    Momentum strategy with stop-loss, take-profit, and volume filter.
-    Uses shorter lookback for faster signal response.
+    Dual Donchian channel breakout.
+    Long channel (50) determines trend, short channel (20) times entries.
+    Only trade in the direction of the longer trend.
 
-    动量策略 + 止损止盈 + 成交量过滤。
-    使用更短回顾期以获得更快的信号响应。
+    双通道突破：长通道定趋势，短通道定入场时机。顺势交易。
     """
 
     def __init__(self, config: dict):
         super().__init__(config)
-        self.name = "Enhanced Momentum"
-        self.momentum_period = 8
-        self.volume_period = 15
-        self.volume_threshold = 1.1
+        self.name = "Dual Channel"
+        self.short_period = 20
+        self.long_period = 50
         self.position_size = 1
-        self.stop_loss_pct = 0.015
-        self.take_profit_pct = 0.03
-        self.max_hold_bars = 240
-        self.entry_threshold = 0.003
-        self.exit_threshold = 0.003
-        self.long_only = False
-        self.short_only = False
+        self.stop_loss_pct = 0.02
+        self.take_profit_pct = 0.05
+        self.max_hold_bars = 360
 
     def init(self, lookback):
         self._entry_bar = -9999
@@ -40,12 +36,9 @@ class EnhancedMomentumStrategy(Strategy):
 
     def on_bar(self, i: int, bar: Bar, account: Account,
                lookback: List[Bar]) -> List[Order]:
-        min_bars = max(self.momentum_period, self.volume_period) + 2
+        min_bars = self.long_period + 2
         if i < min_bars:
             return []
-
-        closes = [b.close for b in lookback]
-        volumes = [b.volume for b in lookback]
 
         sym = self.symbol
         pos = self.get_position(account)
@@ -61,18 +54,11 @@ class EnhancedMomentumStrategy(Strategy):
                     return [Order(sym, Direction.SHORT, pos.quantity)]
                 if pnl_pct >= self.take_profit_pct:
                     return [Order(sym, Direction.SHORT, pos.quantity)]
-                # Momentum exit: close if momentum reverses
-                momentum = (closes[-1] - closes[-self.momentum_period - 1]) / closes[-self.momentum_period - 1]
-                if bars_held > 10 and momentum < -self.exit_threshold:
-                    return [Order(sym, Direction.SHORT, pos.quantity)]
             else:
                 pnl_pct = (entry_px - bar.close) / entry_px
                 if pnl_pct <= -self.stop_loss_pct:
                     return [Order(sym, Direction.LONG, pos.quantity)]
                 if pnl_pct >= self.take_profit_pct:
-                    return [Order(sym, Direction.LONG, pos.quantity)]
-                momentum = (closes[-1] - closes[-self.momentum_period - 1]) / closes[-self.momentum_period - 1]
-                if bars_held > 10 and momentum > self.exit_threshold:
                     return [Order(sym, Direction.LONG, pos.quantity)]
 
             if bars_held >= self.max_hold_bars:
@@ -81,17 +67,29 @@ class EnhancedMomentumStrategy(Strategy):
                 else:
                     return [Order(sym, Direction.LONG, pos.quantity)]
 
-        # === ENTRIES ===
+        # === ENTRY: Trend-aligned channel breakout ===
         if pos is None:
-            momentum = (closes[-1] - closes[-self.momentum_period - 1]) / closes[-self.momentum_period - 1]
-            avg_volume = sma(volumes, self.volume_period)
-            high_volume = volumes[-1] > avg_volume * self.volume_threshold
+            # Long channel for trend direction
+            long_highs = [b.high for b in lookback[-self.long_period:-1]]
+            long_lows = [b.low for b in lookback[-self.long_period:-1]]
+            long_mid = (max(long_highs) + min(long_lows)) / 2.0
 
-            if momentum > self.entry_threshold and high_volume and not self.short_only:
+            # Short channel for entry
+            short_highs = [b.high for b in lookback[-self.short_period:-1]]
+            short_lows = [b.low for b in lookback[-self.short_period:-1]]
+            short_high = max(short_highs)
+            short_low = min(short_lows)
+
+            uptrend = bar.close > long_mid
+            downtrend = bar.close < long_mid
+
+            # Long breakout in uptrend
+            if bar.close > short_high and uptrend:
                 self._entry_bar = i
                 self._entry_price = bar.close
                 return [Order(sym, Direction.LONG, self.position_size)]
-            elif momentum < -self.entry_threshold and high_volume and not self.long_only:
+            # Short breakout in downtrend
+            elif bar.close < short_low and downtrend:
                 self._entry_bar = i
                 self._entry_price = bar.close
                 return [Order(sym, Direction.SHORT, self.position_size)]

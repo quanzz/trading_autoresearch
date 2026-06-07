@@ -1,38 +1,38 @@
 """
-Enhanced Momentum Strategy with Risk Management.
+Pullback Strategy — Buy oversold dips in uptrend.
 
-增强动量策略（含风险管理）。
+回调买入策略 — 在上升趋势中买入超卖回调。
+Long when RSI oversold AND price above SMA (uptrend confirmed).
 """
 
 from typing import List
 
 from backtest.account import Bar, Order, Direction, OrderType, Account
-from backtest.strategy_base import Strategy, sma
+from backtest.strategy_base import Strategy, sma, rsi
 
 
-class EnhancedMomentumStrategy(Strategy):
+class PullbackStrategy(Strategy):
     """
-    Momentum strategy with stop-loss, take-profit, and volume filter.
-    Uses shorter lookback for faster signal response.
+    Buy pullbacks in an uptrend.
+    LONG when RSI < oversold AND close > SMA(trend) — dip in uptrend.
+    SHORT when RSI > overbought AND close < SMA(trend) — rally in downtrend.
 
-    动量策略 + 止损止盈 + 成交量过滤。
-    使用更短回顾期以获得更快的信号响应。
+    上升趋势中买入回调。下跌趋势中卖出反弹。
     """
 
     def __init__(self, config: dict):
         super().__init__(config)
-        self.name = "Enhanced Momentum"
-        self.momentum_period = 8
-        self.volume_period = 15
-        self.volume_threshold = 1.1
+        self.name = "Pullback"
+        self.rsi_period = 14
+        self.rsi_oversold = 35
+        self.rsi_overbought = 65
+        self.rsi_exit_long = 55
+        self.rsi_exit_short = 45
+        self.trend_period = 50
         self.position_size = 1
-        self.stop_loss_pct = 0.015
-        self.take_profit_pct = 0.03
-        self.max_hold_bars = 240
-        self.entry_threshold = 0.003
-        self.exit_threshold = 0.003
-        self.long_only = False
-        self.short_only = False
+        self.stop_loss_pct = 0.02
+        self.take_profit_pct = 0.05
+        self.max_hold_bars = 360
 
     def init(self, lookback):
         self._entry_bar = -9999
@@ -40,16 +40,17 @@ class EnhancedMomentumStrategy(Strategy):
 
     def on_bar(self, i: int, bar: Bar, account: Account,
                lookback: List[Bar]) -> List[Order]:
-        min_bars = max(self.momentum_period, self.volume_period) + 2
+        min_bars = max(self.rsi_period, self.trend_period) + 2
         if i < min_bars:
             return []
 
         closes = [b.close for b in lookback]
-        volumes = [b.volume for b in lookback]
-
         sym = self.symbol
         pos = self.get_position(account)
         bars_held = i - self._entry_bar if pos is not None else 0
+
+        rsi_val = rsi(closes, self.rsi_period)
+        trend_sma = sma(closes, self.trend_period)
 
         # === EXITS ===
         if pos is not None:
@@ -61,9 +62,8 @@ class EnhancedMomentumStrategy(Strategy):
                     return [Order(sym, Direction.SHORT, pos.quantity)]
                 if pnl_pct >= self.take_profit_pct:
                     return [Order(sym, Direction.SHORT, pos.quantity)]
-                # Momentum exit: close if momentum reverses
-                momentum = (closes[-1] - closes[-self.momentum_period - 1]) / closes[-self.momentum_period - 1]
-                if bars_held > 10 and momentum < -self.exit_threshold:
+                # Exit when RSI recovers
+                if bars_held > 5 and rsi_val > self.rsi_exit_long:
                     return [Order(sym, Direction.SHORT, pos.quantity)]
             else:
                 pnl_pct = (entry_px - bar.close) / entry_px
@@ -71,8 +71,7 @@ class EnhancedMomentumStrategy(Strategy):
                     return [Order(sym, Direction.LONG, pos.quantity)]
                 if pnl_pct >= self.take_profit_pct:
                     return [Order(sym, Direction.LONG, pos.quantity)]
-                momentum = (closes[-1] - closes[-self.momentum_period - 1]) / closes[-self.momentum_period - 1]
-                if bars_held > 10 and momentum > self.exit_threshold:
+                if bars_held > 5 and rsi_val < self.rsi_exit_short:
                     return [Order(sym, Direction.LONG, pos.quantity)]
 
             if bars_held >= self.max_hold_bars:
@@ -81,17 +80,18 @@ class EnhancedMomentumStrategy(Strategy):
                 else:
                     return [Order(sym, Direction.LONG, pos.quantity)]
 
-        # === ENTRIES ===
+        # === ENTRIES: Pullback in trend direction ===
         if pos is None:
-            momentum = (closes[-1] - closes[-self.momentum_period - 1]) / closes[-self.momentum_period - 1]
-            avg_volume = sma(volumes, self.volume_period)
-            high_volume = volumes[-1] > avg_volume * self.volume_threshold
+            uptrend = closes[-1] > trend_sma
+            downtrend = closes[-1] < trend_sma
 
-            if momentum > self.entry_threshold and high_volume and not self.short_only:
+            # Long: RSI oversold in uptrend
+            if rsi_val < self.rsi_oversold and uptrend:
                 self._entry_bar = i
                 self._entry_price = bar.close
                 return [Order(sym, Direction.LONG, self.position_size)]
-            elif momentum < -self.entry_threshold and high_volume and not self.long_only:
+            # Short: RSI overbought in downtrend
+            elif rsi_val > self.rsi_overbought and downtrend:
                 self._entry_bar = i
                 self._entry_price = bar.close
                 return [Order(sym, Direction.SHORT, self.position_size)]

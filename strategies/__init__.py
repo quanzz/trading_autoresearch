@@ -21,6 +21,18 @@ from strategies.bollinger_breakout import BollingerBreakoutStrategy
 from strategies.momentum_volume import MomentumStrategy
 from strategies.rsi_reversion import RsiReversionStrategy
 from strategies.enhanced_momentum import EnhancedMomentumStrategy
+from strategies.trend_momentum import TrendMomentumStrategy
+from strategies.pure_momentum import PureMomentumStrategy
+from strategies.momentum_trailing import MomentumTrailingStrategy
+from strategies.dual_momentum import DualMomentumStrategy
+from strategies.momentum_rsi import MomentumRsiStrategy
+from strategies.channel_breakout import ChannelBreakoutStrategy
+from strategies.bb_breakout import BBBreakoutStrategy
+from strategies.dual_channel import DualChannelStrategy
+from strategies.pullback import PullbackStrategy
+from strategies.asymmetric_breakout import AsymmetricBreakoutStrategy
+from strategies.atr_breakout import ATRBreakoutStrategy
+from strategies.channel_long_only import ChannelLongOnlyStrategy
 
 # Re-export indicator helpers for convenience
 # 重新导出指标辅助函数以便使用
@@ -31,6 +43,8 @@ __all__ = [
     "BollingerBreakoutStrategy",
     "MomentumStrategy",
     "RsiReversionStrategy",
+    "EnhancedMomentumStrategy",
+    "TrendMomentumStrategy",
     "Strategy",
     "sma",
     "ema",
@@ -60,12 +74,13 @@ def create_strategy(config: dict) -> Strategy:
         MomentumStrategy       — 动量 + 成交量过滤
         RsiReversionStrategy   — RSI 均值回归 + 严格风险控制
     """
-    strategy = EnhancedMomentumStrategy(config)
-    strategy.momentum_period = 12
-    strategy.volume_period = 15
-    strategy.volume_threshold = 0.0
+    strategy = AsymmetricBreakoutStrategy(config)
+    strategy.long_channel = 18
+    strategy.short_channel = 23
     strategy.position_size = 1
-    strategy.stop_loss_pct = 0.02
-    strategy.take_profit_pct = 0.04
+    strategy.long_stop_pct = 0.02
+    strategy.long_target_pct = 0.05
+    strategy.short_stop_pct = 0.02
+    strategy.short_target_pct = 0.05
     strategy.max_hold_bars = 360
     return strategy

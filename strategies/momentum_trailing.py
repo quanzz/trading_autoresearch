@@ -1,52 +1,53 @@
 """
-Enhanced Momentum Strategy with Risk Management.
+Momentum Strategy with Trailing Stop.
 
-增强动量策略（含风险管理）。
+动量策略 + 移动止损。
+Once in profit, activates a trailing stop to protect gains
+and capture more of the big moves.
 """
 
 from typing import List
 
 from backtest.account import Bar, Order, Direction, OrderType, Account
-from backtest.strategy_base import Strategy, sma
+from backtest.strategy_base import Strategy
 
 
-class EnhancedMomentumStrategy(Strategy):
+class MomentumTrailingStrategy(Strategy):
     """
-    Momentum strategy with stop-loss, take-profit, and volume filter.
-    Uses shorter lookback for faster signal response.
+    Momentum entry with trailing stop exit management.
+    Trailing stop activates after trailing_activate_pct profit,
+    then trails at trailing_distance_pct behind the best price.
 
-    动量策略 + 止损止盈 + 成交量过滤。
-    使用更短回顾期以获得更快的信号响应。
+    动量入场 + 移动止损出场管理。
+    盈利达到激活阈值后启动移动止损，追踪最佳价格。
     """
 
     def __init__(self, config: dict):
         super().__init__(config)
-        self.name = "Enhanced Momentum"
-        self.momentum_period = 8
-        self.volume_period = 15
-        self.volume_threshold = 1.1
+        self.name = "Momentum Trailing"
+        self.momentum_period = 18
         self.position_size = 1
-        self.stop_loss_pct = 0.015
-        self.take_profit_pct = 0.03
-        self.max_hold_bars = 240
+        self.stop_loss_pct = 0.02
+        self.take_profit_pct = 0.05
+        self.max_hold_bars = 360
         self.entry_threshold = 0.003
         self.exit_threshold = 0.003
-        self.long_only = False
-        self.short_only = False
+        # Trailing stop params
+        self.trailing_activate_pct = 0.02   # Activate trailing after 2% profit
+        self.trailing_distance_pct = 0.015  # Trail 1.5% behind best price
 
     def init(self, lookback):
         self._entry_bar = -9999
         self._entry_price = 0.0
+        self._best_price = 0.0
+        self._trailing_active = False
 
     def on_bar(self, i: int, bar: Bar, account: Account,
                lookback: List[Bar]) -> List[Order]:
-        min_bars = max(self.momentum_period, self.volume_period) + 2
-        if i < min_bars:
+        if i < self.momentum_period + 2:
             return []
 
         closes = [b.close for b in lookback]
-        volumes = [b.volume for b in lookback]
-
         sym = self.symbol
         pos = self.get_position(account)
         bars_held = i - self._entry_bar if pos is not None else 0
@@ -57,16 +58,42 @@ class EnhancedMomentumStrategy(Strategy):
 
             if pos.direction == Direction.LONG:
                 pnl_pct = (bar.close - entry_px) / entry_px
+
+                # Update best price and trailing stop
+                if bar.close > self._best_price:
+                    self._best_price = bar.close
+                if pnl_pct >= self.trailing_activate_pct:
+                    self._trailing_active = True
+
+                # Trailing stop exit
+                if self._trailing_active:
+                    trail_stop = self._best_price * (1.0 - self.trailing_distance_pct)
+                    if bar.close <= trail_stop:
+                        return [Order(sym, Direction.SHORT, pos.quantity)]
+
+                # Hard stop
                 if pnl_pct <= -self.stop_loss_pct:
                     return [Order(sym, Direction.SHORT, pos.quantity)]
+                # Take profit
                 if pnl_pct >= self.take_profit_pct:
                     return [Order(sym, Direction.SHORT, pos.quantity)]
-                # Momentum exit: close if momentum reverses
+                # Momentum exit (secondary)
                 momentum = (closes[-1] - closes[-self.momentum_period - 1]) / closes[-self.momentum_period - 1]
                 if bars_held > 10 and momentum < -self.exit_threshold:
                     return [Order(sym, Direction.SHORT, pos.quantity)]
             else:
                 pnl_pct = (entry_px - bar.close) / entry_px
+
+                if bar.close < self._best_price or self._best_price == 0:
+                    self._best_price = bar.close
+                if pnl_pct >= self.trailing_activate_pct:
+                    self._trailing_active = True
+
+                if self._trailing_active:
+                    trail_stop = self._best_price * (1.0 + self.trailing_distance_pct)
+                    if bar.close >= trail_stop:
+                        return [Order(sym, Direction.LONG, pos.quantity)]
+
                 if pnl_pct <= -self.stop_loss_pct:
                     return [Order(sym, Direction.LONG, pos.quantity)]
                 if pnl_pct >= self.take_profit_pct:
@@ -84,16 +111,18 @@ class EnhancedMomentumStrategy(Strategy):
         # === ENTRIES ===
         if pos is None:
             momentum = (closes[-1] - closes[-self.momentum_period - 1]) / closes[-self.momentum_period - 1]
-            avg_volume = sma(volumes, self.volume_period)
-            high_volume = volumes[-1] > avg_volume * self.volume_threshold
 
-            if momentum > self.entry_threshold and high_volume and not self.short_only:
+            if momentum > self.entry_threshold:
                 self._entry_bar = i
                 self._entry_price = bar.close
+                self._best_price = bar.close
+                self._trailing_active = False
                 return [Order(sym, Direction.LONG, self.position_size)]
-            elif momentum < -self.entry_threshold and high_volume and not self.long_only:
+            elif momentum < -self.entry_threshold:
                 self._entry_bar = i
                 self._entry_price = bar.close
+                self._best_price = bar.close
+                self._trailing_active = False
                 return [Order(sym, Direction.SHORT, self.position_size)]
 
         return []

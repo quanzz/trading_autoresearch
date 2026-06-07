@@ -1,38 +1,36 @@
 """
-Enhanced Momentum Strategy with Risk Management.
+Trend-Filtered Momentum Strategy.
 
-增强动量策略（含风险管理）。
+趋势过滤动量策略：仅顺势交易。
+Uses EMA trend filter to avoid counter-trend entries,
+which should reduce false signals and improve Sharpe.
 """
 
 from typing import List
 
 from backtest.account import Bar, Order, Direction, OrderType, Account
-from backtest.strategy_base import Strategy, sma
+from backtest.strategy_base import Strategy, ema
 
 
-class EnhancedMomentumStrategy(Strategy):
+class TrendMomentumStrategy(Strategy):
     """
-    Momentum strategy with stop-loss, take-profit, and volume filter.
-    Uses shorter lookback for faster signal response.
+    Momentum strategy with EMA trend direction filter.
+    LONG only when price > EMA(trend) — uptrend confirmed.
+    SHORT only when price < EMA(trend) — downtrend confirmed.
 
-    动量策略 + 止损止盈 + 成交量过滤。
-    使用更短回顾期以获得更快的信号响应。
+    动量策略 + EMA 趋势方向过滤。
+    仅在 EMA(趋势) 方向一致时入场。
     """
 
     def __init__(self, config: dict):
         super().__init__(config)
-        self.name = "Enhanced Momentum"
-        self.momentum_period = 8
-        self.volume_period = 15
-        self.volume_threshold = 1.1
+        self.name = "Trend Momentum"
+        self.momentum_period = 12
+        self.trend_ema_period = 50
         self.position_size = 1
-        self.stop_loss_pct = 0.015
-        self.take_profit_pct = 0.03
-        self.max_hold_bars = 240
-        self.entry_threshold = 0.003
-        self.exit_threshold = 0.003
-        self.long_only = False
-        self.short_only = False
+        self.stop_loss_pct = 0.02
+        self.take_profit_pct = 0.04
+        self.max_hold_bars = 360
 
     def init(self, lookback):
         self._entry_bar = -9999
@@ -40,16 +38,19 @@ class EnhancedMomentumStrategy(Strategy):
 
     def on_bar(self, i: int, bar: Bar, account: Account,
                lookback: List[Bar]) -> List[Order]:
-        min_bars = max(self.momentum_period, self.volume_period) + 2
+        min_bars = max(self.momentum_period, self.trend_ema_period) + 2
         if i < min_bars:
             return []
 
         closes = [b.close for b in lookback]
-        volumes = [b.volume for b in lookback]
-
         sym = self.symbol
         pos = self.get_position(account)
         bars_held = i - self._entry_bar if pos is not None else 0
+
+        # Trend filter: only trade in trend direction
+        trend_ema_val = ema(closes, self.trend_ema_period)
+        uptrend = closes[-1] > trend_ema_val
+        downtrend = closes[-1] < trend_ema_val
 
         # === EXITS ===
         if pos is not None:
@@ -61,9 +62,8 @@ class EnhancedMomentumStrategy(Strategy):
                     return [Order(sym, Direction.SHORT, pos.quantity)]
                 if pnl_pct >= self.take_profit_pct:
                     return [Order(sym, Direction.SHORT, pos.quantity)]
-                # Momentum exit: close if momentum reverses
-                momentum = (closes[-1] - closes[-self.momentum_period - 1]) / closes[-self.momentum_period - 1]
-                if bars_held > 10 and momentum < -self.exit_threshold:
+                # Trend exit: exit if trend reverses
+                if bars_held > 10 and downtrend:
                     return [Order(sym, Direction.SHORT, pos.quantity)]
             else:
                 pnl_pct = (entry_px - bar.close) / entry_px
@@ -71,8 +71,7 @@ class EnhancedMomentumStrategy(Strategy):
                     return [Order(sym, Direction.LONG, pos.quantity)]
                 if pnl_pct >= self.take_profit_pct:
                     return [Order(sym, Direction.LONG, pos.quantity)]
-                momentum = (closes[-1] - closes[-self.momentum_period - 1]) / closes[-self.momentum_period - 1]
-                if bars_held > 10 and momentum > self.exit_threshold:
+                if bars_held > 10 and uptrend:
                     return [Order(sym, Direction.LONG, pos.quantity)]
 
             if bars_held >= self.max_hold_bars:
@@ -84,14 +83,13 @@ class EnhancedMomentumStrategy(Strategy):
         # === ENTRIES ===
         if pos is None:
             momentum = (closes[-1] - closes[-self.momentum_period - 1]) / closes[-self.momentum_period - 1]
-            avg_volume = sma(volumes, self.volume_period)
-            high_volume = volumes[-1] > avg_volume * self.volume_threshold
 
-            if momentum > self.entry_threshold and high_volume and not self.short_only:
+            # Only enter in trend direction
+            if momentum > 0.003 and uptrend:
                 self._entry_bar = i
                 self._entry_price = bar.close
                 return [Order(sym, Direction.LONG, self.position_size)]
-            elif momentum < -self.entry_threshold and high_volume and not self.long_only:
+            elif momentum < -0.003 and downtrend:
                 self._entry_bar = i
                 self._entry_price = bar.close
                 return [Order(sym, Direction.SHORT, self.position_size)]

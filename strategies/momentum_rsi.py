@@ -1,38 +1,39 @@
 """
-Enhanced Momentum Strategy with Risk Management.
+Momentum + RSI Filter Strategy — Long Only.
 
-增强动量策略（含风险管理）。
+动量 + RSI 过滤策略 — 仅做多。
+Only enters LONG when momentum is positive AND RSI confirms
+the market isn't overbought, improving entry timing.
 """
 
 from typing import List
 
 from backtest.account import Bar, Order, Direction, OrderType, Account
-from backtest.strategy_base import Strategy, sma
+from backtest.strategy_base import Strategy, rsi
 
 
-class EnhancedMomentumStrategy(Strategy):
+class MomentumRsiStrategy(Strategy):
     """
-    Momentum strategy with stop-loss, take-profit, and volume filter.
-    Uses shorter lookback for faster signal response.
+    Momentum with RSI entry filter for better timing.
+    LONG only when: momentum > threshold AND RSI < rsi_max (not overbought).
+    This avoids buying after the move has already exhausted.
 
-    动量策略 + 止损止盈 + 成交量过滤。
-    使用更短回顾期以获得更快的信号响应。
+    动量 + RSI 入场过滤提升择时。
+    仅当动量向上且 RSI 未超买时做多，避免追高。
     """
 
     def __init__(self, config: dict):
         super().__init__(config)
-        self.name = "Enhanced Momentum"
-        self.momentum_period = 8
-        self.volume_period = 15
-        self.volume_threshold = 1.1
+        self.name = "Momentum + RSI"
+        self.momentum_period = 16
+        self.rsi_period = 14
+        self.rsi_max = 60          # Only enter when RSI < 60 (not overbought)
         self.position_size = 1
-        self.stop_loss_pct = 0.015
-        self.take_profit_pct = 0.03
-        self.max_hold_bars = 240
-        self.entry_threshold = 0.003
+        self.stop_loss_pct = 0.02
+        self.take_profit_pct = 0.05
+        self.max_hold_bars = 360
+        self.entry_threshold = 0.0025
         self.exit_threshold = 0.003
-        self.long_only = False
-        self.short_only = False
 
     def init(self, lookback):
         self._entry_bar = -9999
@@ -40,13 +41,11 @@ class EnhancedMomentumStrategy(Strategy):
 
     def on_bar(self, i: int, bar: Bar, account: Account,
                lookback: List[Bar]) -> List[Order]:
-        min_bars = max(self.momentum_period, self.volume_period) + 2
+        min_bars = max(self.momentum_period, self.rsi_period) + 2
         if i < min_bars:
             return []
 
         closes = [b.close for b in lookback]
-        volumes = [b.volume for b in lookback]
-
         sym = self.symbol
         pos = self.get_position(account)
         bars_held = i - self._entry_bar if pos is not None else 0
@@ -61,7 +60,6 @@ class EnhancedMomentumStrategy(Strategy):
                     return [Order(sym, Direction.SHORT, pos.quantity)]
                 if pnl_pct >= self.take_profit_pct:
                     return [Order(sym, Direction.SHORT, pos.quantity)]
-                # Momentum exit: close if momentum reverses
                 momentum = (closes[-1] - closes[-self.momentum_period - 1]) / closes[-self.momentum_period - 1]
                 if bars_held > 10 and momentum < -self.exit_threshold:
                     return [Order(sym, Direction.SHORT, pos.quantity)]
@@ -81,19 +79,14 @@ class EnhancedMomentumStrategy(Strategy):
                 else:
                     return [Order(sym, Direction.LONG, pos.quantity)]
 
-        # === ENTRIES ===
+        # === ENTRIES: Momentum + RSI filter, LONG ONLY ===
         if pos is None:
             momentum = (closes[-1] - closes[-self.momentum_period - 1]) / closes[-self.momentum_period - 1]
-            avg_volume = sma(volumes, self.volume_period)
-            high_volume = volumes[-1] > avg_volume * self.volume_threshold
+            rsi_val = rsi(closes, self.rsi_period)
 
-            if momentum > self.entry_threshold and high_volume and not self.short_only:
+            if momentum > self.entry_threshold and rsi_val < self.rsi_max:
                 self._entry_bar = i
                 self._entry_price = bar.close
                 return [Order(sym, Direction.LONG, self.position_size)]
-            elif momentum < -self.entry_threshold and high_volume and not self.long_only:
-                self._entry_bar = i
-                self._entry_price = bar.close
-                return [Order(sym, Direction.SHORT, self.position_size)]
 
         return []
