@@ -16,6 +16,8 @@ data/*.csv
 
 # Results file (untracked, like karpathy's)
 results.tsv
+results/
+run.log
 
 # IDE
 .vscode/
