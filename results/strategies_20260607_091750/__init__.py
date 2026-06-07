@@ -61,11 +61,11 @@ def create_strategy(config: dict) -> Strategy:
         RsiReversionStrategy   — RSI 均值回归 + 严格风险控制
     """
     strategy = EnhancedMomentumStrategy(config)
-    strategy.momentum_period = 12
+    strategy.momentum_period = 8
     strategy.volume_period = 15
     strategy.volume_threshold = 0.0
     strategy.position_size = 1
-    strategy.stop_loss_pct = 0.02
-    strategy.take_profit_pct = 0.04
-    strategy.max_hold_bars = 360
+    strategy.stop_loss_pct = 0.01
+    strategy.take_profit_pct = 0.035
+    strategy.max_hold_bars = 240
     return strategy
