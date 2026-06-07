@@ -14,9 +14,11 @@ To set up a new experiment:
    - `backtest/account.py` — Order, Trade, Position, Account classes. Read-only.
    - `backtest/engine.py` — bar-by-bar backtest loop. Read-only.
    - `backtest/metrics.py` — Max Drawdown, Sharpe Ratio, combined score. Read-only.
-   - `strategy.py` — the file YOU modify. Strategy classes and parameters.
+   - `backtest/strategy_base.py` — Strategy base class + indicator helpers. Read-only.
+   - `strategies/` — the directory YOU modify. Create/edit strategy files here.
+   - `strategies/__init__.py` — strategy registry and create_strategy() factory. YOU modify this to switch strategies or tune params.
    - `run.py` — single-backtest entry point. Runs backtest, prints metrics, and generates artifacts (strategy copy, equity chart, summary report) in `results/`.
-- `results/` — directory where post-backtest artifacts are saved automatically.
+   - `results/` — directory where post-backtest artifacts are saved automatically.
 4. **Verify data exists**: Check that `data/` contains CSV files for the configured symbols. If the data files don't exist, tell the human to provide them.
 5. **Initialize results.tsv**: Create `results.tsv` with just the header row:
 
@@ -33,12 +35,12 @@ Once you get confirmation, start the experiment loop.
 Each experiment runs a single backtest on CPU. The backtest iterates bar-by-bar through minute-level OHLCV data, executing the strategy's trading signals.
 
 **What you CAN do:**
-- Modify `strategy.py` — this is the only file you edit. Everything is fair game: strategy type, parameters, indicator periods, position sizing, entry/exit logic, filters, stop-loss/take-profit rules. You can write entirely new strategy classes.
-- Change the active strategy in `create_strategy()`.
-- Add helper functions for technical indicators.
+- Create and edit strategy files in `strategies/` — this is the only directory you modify. Everything is fair game: strategy type, parameters, indicator periods, position sizing, entry/exit logic, filters, stop-loss/take-profit rules. You can write entirely new strategy classes as separate `.py` files with descriptive names.
+- Modify `strategies/__init__.py` to switch the active strategy in `create_strategy()` or tune parameters.
+- Use the indicator helpers (`sma`, `ema`, `stddev`, `rsi`) from `backtest.strategy_base`.
 
 **What you CANNOT do:**
-- Modify `backtest/`, `prepare.py`, `config.yaml`, or `run.py`. They are read-only.
+- Modify `backtest/`, `prepare.py`, `config.yaml`, `strategy.py`, or `run.py`. They are read-only.
 - Install new packages or add dependencies. You can only use what's already in `pyproject.toml` (numpy, pandas, pyyaml, and Python stdlib).
 - Modify the evaluation harness. The `compute_all_metrics` function in `backtest/metrics.py` is the ground truth.
 
@@ -130,9 +132,9 @@ The experiment runs on a dedicated branch (e.g. `autoresearch/jun6`).
 LOOP FOREVER:
 
 1. Look at the git state: the current branch/commit we're on
-2. Read `strategy.py`, `results.tsv`, and `research_log.md` to understand current state and past experiments
+2. Read `strategies/`, `results.tsv`, and `research_log.md` to understand current state and past experiments
 3. Formulate a hypothesis for improvement based on past results
-4. Modify `strategy.py` with your experimental idea
+4. Modify strategy files in `strategies/` with your experimental idea
 5. git commit with a descriptive message
 6. Run the experiment: `python run.py > run.log 2>&1`
 7. Read the results: `grep "^score:\|^max_drawdown:\|^sharpe_ratio:\|^total_return:\|^total_trades:\|^win_rate:" run.log`

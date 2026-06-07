@@ -7,17 +7,24 @@
 ```
 trading_autoresearch/
 ├── backtest/
-│   ├── __init__.py      # 回测框架导出
-│   ├── account.py        # 账户、持仓、订单、交易 (不可修改)
-│   ├── engine.py         # 逐Bar回测循环 (不可修改)
-│   └── metrics.py        # 最大回撤、夏普比率、综合得分 (不可修改)
-├── config.yaml           # 用户配置：手续费、滑点、乘数等
-├── prepare.py            # CSV数据加载 (不可修改)
-├── strategy.py           # 交易策略 — AI Agent 修改此文件
-├── run.py                # 单次回测入口
-├── program.md            # AI Agent 指令
-├── results.tsv           # 实验结果记录 (tab分隔)
-└── research_log.md       # 研究发现日志 (Markdown)
+│   ├── __init__.py          # 回测框架导出
+│   ├── account.py           # 账户、持仓、订单、交易 (不可修改)
+│   ├── engine.py            # 逐Bar回测循环 (不可修改)
+│   ├── metrics.py           # 最大回撤、夏普比率、综合得分 (不可修改)
+│   └── strategy_base.py     # 策略基类 + 技术指标 (不可修改)
+├── strategies/              # 策略实现目录 — AI Agent 在此创建/编辑策略
+│   ├── __init__.py          # 策略注册 + create_strategy() 工厂
+│   ├── sma_cross.py         # SMA 交叉策略
+│   ├── bollinger_breakout.py# 布林带均值回归策略
+│   ├── momentum_volume.py   # 动量 + 成交量策略
+│   └── rsi_reversion.py     # RSI 均值回归策略
+├── config.yaml              # 用户配置：手续费、滑点、乘数、保证金率等
+├── prepare.py               # CSV数据加载 (不可修改)
+├── strategy.py              # 薄封装 — 重新导出 strategies/ (不可修改)
+├── run.py                   # 单次回测入口
+├── program.md               # AI Agent 指令
+├── results.tsv              # 实验结果记录 (tab分隔)
+└── research_log.md          # 研究发现日志 (Markdown)
 ```
 
 ## 快速开始
@@ -58,7 +65,7 @@ python run.py
 
 ## 设计说明
 
-- **只需修改一个文件**: Agent 只修改 `strategy.py`，保持变更可审查
+- **只需修改策略目录**: Agent 在 `strategies/` 下创建和编辑策略文件，保持变更可审查
 - **固定评估指标**: `backtest/` 中的回测引擎和指标计算不可修改
 - **综合评分**: 加权结合最大回撤 (优先级最高) 和夏普比率
 - **无人值守**: 一次启动后完全自主运行

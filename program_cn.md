@@ -10,16 +10,23 @@ trading_autoresearch/
 │   ├── __init__.py              # 包导出
 │   ├── account.py               # 账户、持仓、订单、交易数据模型
 │   ├── engine.py                # 逐 Bar 回测引擎
-│   └── metrics.py               # 最大回撤、夏普比率、综合得分计算
+│   ├── metrics.py               # 最大回撤、夏普比率、综合得分计算
+│   └── strategy_base.py         # 策略基类 + 技术指标辅助函数
+├── strategies/                  # 策略实现目录 —— Agent 在此创建/编辑策略
+│   ├── __init__.py              # 策略注册 + create_strategy() 工厂
+│   ├── sma_cross.py             # SMA 交叉策略
+│   ├── bollinger_breakout.py    # 布林带均值回归策略
+│   ├── momentum_volume.py       # 动量 + 成交量策略
+│   └── rsi_reversion.py         # RSI 均值回归策略
 ├── data/                        # 数据目录（存放 CSV 行情文件）
 │   └── au2607.csv               # 示例：单个品种的分钟级 OHLCV 数据
 ├── results/                     # 回测产物目录（每次运行自动生成）
-│   ├── strategy_<时间戳>.py     # 当前策略脚本的副本
+│   ├── strategies_<时间戳>/     # 策略目录的副本
 │   ├── equity_<时间戳>_<名>.png # 净值曲线图（含回撤面板）
 │   └── report_<时间戳>_<名>.md  # 回测总结报告（Markdown）
-├── config.yaml                  # 用户配置：手续费/滑点/乘数/权重（只读）
+├── config.yaml                  # 用户配置：手续费/滑点/乘数/保证金率（只读）
 ├── prepare.py                   # CSV 数据加载（只读）
-├── strategy.py                  # 交易策略 —— Agent 唯一可修改的文件
+├── strategy.py                  # 薄封装 — 重新导出 strategies/（不可修改）
 ├── run.py                       # 单次回测入口，运行后输出指标并生成产物
 ├── results.tsv                  # 实验结果记录（Tab 分隔，untracked）
 ├── research_log.md              # 研究发现日志（人类可读）
@@ -32,11 +39,12 @@ trading_autoresearch/
 
 | 文件/目录 | 角色 | 是否可修改 |
 |-----------|------|-----------|
-| `backtest/` | 回测框架（引擎、账户、指标） | ❌ 只读 |
+| `backtest/` | 回测框架（引擎、账户、指标、策略基类） | ❌ 只读 |
 | `config.yaml` | 交易参数配置 | ❌ 只读（用户编辑） |
 | `prepare.py` | 数据加载与预处理 | ❌ 只读 |
+| `strategy.py` | 薄封装重新导出 | ❌ 只读 |
 | `run.py` | 回测入口与产物生成 | ❌ 只读 |
-| `strategy.py` | 策略定义 | ✅ **Agent 修改** |
+| `strategies/` | 策略实现目录 | ✅ **Agent 修改** |
 | `results.tsv` | 实验结果记录 | ✏️ Agent 追加（untracked） |
 | `research_log.md` | 研究发现日志 | ✏️ Agent 追加 |
 | `results/` | 回测产物输出 | 🤖 自动生成 |
@@ -64,12 +72,12 @@ commit	score	mdd	sharpe	total_return	trades	status	description
 每次实验在 CPU 上运行单次回测。回测逐 Bar 遍历分钟级 OHLCV 数据，执行策略产生的交易信号。
 
 **你可以做的事：**
-- 修改 `strategy.py` — 这是你唯一可以编辑的文件。一切皆可调整：策略类型、参数、指标周期、仓位大小、入场/出场逻辑、过滤器、止损/止盈规则。你可以编写全新的策略类。
-- 在 `create_strategy()` 中切换当前使用的策略。
-- 添加技术指标的辅助函数。
+- 在 `strategies/` 目录下创建和编辑策略文件 — 这是你唯一可以修改的地方。一切皆可调整：策略类型、参数、指标周期、仓位大小、入场/出场逻辑、过滤器、止损/止盈规则。你可以编写全新的策略类作为独立的 `.py` 文件，文件名体现策略特点。
+- 修改 `strategies/__init__.py` 来切换活跃策略或调整参数。
+- 使用 `backtest.strategy_base` 中的指标辅助函数（`sma`、`ema`、`stddev`、`rsi`）。
 
 **你不可以做的事：**
-- 修改 `backtest/`、`prepare.py`、`config.yaml` 或 `run.py`。它们都是只读的。
+- 修改 `backtest/`、`prepare.py`、`config.yaml`、`strategy.py` 或 `run.py`。它们都是只读的。
 - 安装新的包或添加依赖。你只能使用 `pyproject.toml` 中已有的库（numpy、pandas、pyyaml 以及 Python 标准库）。
 - 修改评估框架。`backtest/metrics.py` 中的 `compute_all_metrics` 函数是唯一的评判标准。
 
@@ -161,9 +169,9 @@ d4e5f6g	0.0000	0.0000	0.00	0.0000	0	crash	参数名拼写错误
 无限循环，永不停歇：
 
 1. 查看 git 状态：当前所在的分支/commit
-2. 阅读 `strategy.py`、`results.tsv` 和 `research_log.md`，理解当前状态和过往实验
+2. 阅读 `strategies/`、`results.tsv` 和 `research_log.md`，理解当前状态和过往实验
 3. 基于过往结果，提出一个改进假设
-4. 用你的实验想法修改 `strategy.py`
+4. 用你的实验想法修改 `strategies/` 下的策略文件
 5. 使用描述性信息执行 `git commit`
 6. 运行实验：`python run.py > run.log 2>&1`
 7. 读取结果：`grep "^score:\|^max_drawdown:\|^sharpe_ratio:\|^total_return:\|^total_trades:\|^win_rate:" run.log`
@@ -174,7 +182,7 @@ d4e5f6g	0.0000	0.0000	0.00	0.0000	0	crash	参数名拼写错误
 12. 在 `research_log.md` 中撰写简短的丢弃记录。
 
 注意：每次运行会自动在 `results/` 目录生成三个产物：
-- `results/strategy_<时间戳>.py` — 当前策略脚本的副本
+- `results/strategies_<时间戳>/` — 策略目录的完整副本
 - `results/equity_<时间戳>_<策略名>.png` — 含回撤面板的净值曲线图
 - `results/report_<时间戳>_<策略名>.md` — 完整的 Markdown 总结报告
 

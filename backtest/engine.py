@@ -1,6 +1,10 @@
 """
 Bar-by-bar backtest engine.
-FIXED — do not modify. The agent edits strategy.py instead.
+
+逐 K 线回测引擎。
+
+FIXED — do not modify. The agent edits files under strategies/ instead.
+固定模块 — 请勿修改。agent 在 strategies/ 目录下编辑策略文件。
 """
 
 import time
@@ -29,6 +33,18 @@ def run_backtest(
 
     Returns:
         Dict with metrics, account summary, and timing info.
+
+    运行逐 K 线回测。
+
+    Args:
+        strategy: 策略实例，需实现 on_bar(i, bar, account, lookback) 方法。
+        data: 品种 → Bar 对象列表的映射字典。
+        account: 账户实例，包含初始资金和费用设置。
+        warmup_bars: 跳过的初始 K 线数（用于指标预热）。
+        time_budget_seconds: 最大运行时间（秒）。超时则提前退出。
+
+    Returns:
+        包含指标、账户摘要和时间信息的字典。
     """
     symbols = list(data.keys())
     if not symbols:
@@ -42,7 +58,7 @@ def run_backtest(
         return {"error": f"Not enough bars ({n_bars}) for warmup ({warmup_bars})"}
 
     t_start = time.time()
-    strategy.symbols = symbols  # Expose symbols to strategy
+    strategy.symbols = symbols  # Expose symbols to strategy / 将品种列表暴露给策略
     strategy.init(bars[:warmup_bars])
 
     pending_orders: List[Order] = []
@@ -52,19 +68,22 @@ def run_backtest(
     for i in range(warmup_bars, n_bars - 1):
         bar_idx = i
         current_bar = bars[i]
-        next_bar = bars[i + 1]  # for next-bar-open execution
+        next_bar = bars[i + 1]  # for next-bar-open execution / 用于下一根 K 线开盘执行
         lookback = bars[:i + 1]
 
         # Execute pending orders from previous bar at this bar's open
+        # 在当前 K 线开盘价执行上一根 K 线的挂单
         for order in pending_orders:
             fill_price = current_bar.open
             account.execute_order(order, fill_price, current_bar.date)
 
         # Get current prices for mark-to-market
+        # 获取当前价格用于逐日盯市
         prices = {symbol: current_bar.close for symbol in symbols}
         account.mark_to_market(current_bar.date, prices)
 
         # Get new orders from strategy
+        # 从策略获取新订单
         new_orders = strategy.on_bar(i, current_bar, account, lookback)
         pending_orders = []
         if new_orders:
@@ -73,6 +92,7 @@ def run_backtest(
                     pending_orders.append(order)
 
         # Progress indicator (every 10%)
+        # 进度指示器（每 10%）
         pct = (i - warmup_bars) * 100 // (n_bars - warmup_bars - 1)
         if pct % 10 == 0 and pct != last_progress:
             last_progress = pct
@@ -81,17 +101,20 @@ def run_backtest(
                   f"{elapsed:.1f}s elapsed)", end="", flush=True)
 
         # Check time budget
+        # 检查时间预算
         if time.time() - t_start > time_budget_seconds:
             print(f"\n  Time budget reached after {i} bars")
             break
 
     # Execute any remaining pending orders at last bar's close
+    # 在最后一根 K 线收盘价执行剩余挂单
     if pending_orders and bar_idx < n_bars - 1:
         last_bar = bars[-1]
         for order in pending_orders:
             account.execute_order(order, last_bar.close, last_bar.date)
 
     # Final mark-to-market
+    # 最终逐日盯市
     if bar_idx > 0:
         final_bar = bars[min(bar_idx, n_bars - 1)]
         prices = {symbol: final_bar.close for symbol in symbols}
@@ -100,11 +123,13 @@ def run_backtest(
     t_end = time.time()
 
     # Close any remaining positions at final price to compute realized P&L
+    # 以最终价格平仓所有持仓以计算已实现盈亏
     _close_all_positions(account, bars[min(bar_idx, n_bars - 1)])
 
-    print()  # newline after progress
+    print()  # newline after progress / 进度后换行
 
     # Compute results
+    # 计算结果
     acct_summary = account.summary()
     metrics = compute_all_metrics(account.equity_curve)
 
@@ -120,7 +145,9 @@ def run_backtest(
 
 
 def _close_all_positions(account: Account, final_bar: Bar):
-    """Close all open positions at the final bar's close price."""
+    """Close all open positions at the final bar's close price.
+
+    以最终 K 线收盘价平仓所有持仓。"""
     for symbol, pos in list(account.positions.items()):
         if pos.direction == Direction.LONG:
             close_order = Order(

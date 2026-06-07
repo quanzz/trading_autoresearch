@@ -1,7 +1,12 @@
 """
 Data loading and preparation for Trading Autoresearch.
 Reads CSV files with minute-level OHLCV data.
-FIXED — do not modify. The agent edits strategy.py instead.
+
+Trading Autoresearch 数据加载与预处理。
+读取分钟级 OHLCV 数据的 CSV 文件。
+
+FIXED — do not modify. The agent edits files under strategies/ instead.
+固定模块 — 请勿修改。agent 在 strategies/ 目录下编辑策略文件。
 """
 
 import csv
@@ -12,7 +17,9 @@ from backtest.account import Bar
 
 
 def _parse_float(val: str) -> Optional[float]:
-    """Parse a string to float, returning None for empty/missing values."""
+    """Parse a string to float, returning None for empty/missing values.
+
+    将字符串解析为浮点数，空值/缺失值返回 None。"""
     if val is None:
         return None
     val = val.strip()
@@ -38,6 +45,19 @@ def load_csv(filepath: str) -> List[Bar]:
 
     Returns:
         List of Bar objects sorted by date.
+
+    加载单个分钟级 OHLCV 数据的 CSV 文件。
+
+    预期列（逗号分隔）：
+        date, open, high, low, close, volume, amt, oi
+
+    空值/缺失值会被优雅处理。
+
+    Args:
+        filepath: CSV 文件路径。
+
+    Returns:
+        按日期排序的 Bar 对象列表。
     """
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"Data file not found: {filepath}")
@@ -62,6 +82,7 @@ def load_csv(filepath: str) -> List[Bar]:
             )
 
             # Skip bars with no price data
+            # 跳过没有价格数据的 K 线
             if bar.open == 0.0 and bar.close == 0.0:
                 continue
 
@@ -71,9 +92,11 @@ def load_csv(filepath: str) -> List[Bar]:
         raise ValueError(f"No valid bars found in {filepath}")
 
     # Ensure sorted by date
+    # 确保按日期排序
     bars.sort(key=lambda b: b.date)
 
     # Forward-fill zero prices (use previous bar's close)
+    # 前向填充零价格（使用前一根 K 线的收盘价）
     for i in range(1, len(bars)):
         if bars[i].open == 0.0:
             bars[i].open = bars[i - 1].close
@@ -97,6 +120,15 @@ def load_all_data(data_dir: str, symbols: List[str]) -> Dict[str, List[Bar]]:
 
     Returns:
         Dict mapping symbol → list of Bar objects.
+
+    从目录中加载多个品种的数据。
+
+    Args:
+        data_dir: 包含 CSV 文件的目录。
+        symbols: 品种名称列表（如 ["au2607", "rb2601"]）。
+
+    Returns:
+        品种 → Bar 对象列表的映射字典。
     """
     data = {}
     for symbol in symbols:

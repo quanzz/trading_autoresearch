@@ -1,5 +1,7 @@
 #!/usr/bin/env python
-"""Generate synthetic minute-level OHLCV data for testing the backtest framework."""
+"""Generate synthetic minute-level OHLCV data for testing the backtest framework.
+
+生成用于测试回测框架的合成分钟级 OHLCV 数据。"""
 import csv
 import random
 import os
@@ -7,7 +9,9 @@ import os
 random.seed(42)
 
 def generate_bars(n_bars=5000, start_price=450.0, volatility=0.001):
-    """Generate synthetic minute bars with trends, mean reversion, and noise."""
+    """Generate synthetic minute bars with trends, mean reversion, and noise.
+
+    生成带有趋势、均值回归和噪声的合成分钟 K 线。"""
     bars = []
     price = start_price
     trend = 0.0
@@ -15,12 +19,14 @@ def generate_bars(n_bars=5000, start_price=450.0, volatility=0.001):
 
     for i in range(n_bars):
         # Occasionally change trend direction
+        # 偶尔改变趋势方向
         trend_duration -= 1
         if trend_duration <= 0:
             trend = random.uniform(-0.0003, 0.0003)
             trend_duration = random.randint(100, 500)
 
         # Generate bar
+        # 生成 K 线
         noise = random.gauss(0, volatility)
         price_change = trend + noise
 
@@ -32,24 +38,11 @@ def generate_bars(n_bars=5000, start_price=450.0, volatility=0.001):
         amt = volume * close_price
         oi = max(10000, int(random.gauss(50000, 5000)))
 
-        # Format date as minute bars for a trading day
-        day = i // 240 + 1
-        minute = i % 240
-        hour = 9 + minute // 60
-        if hour >= 11:
-            hour += 1  # lunch break 11:30-13:00
-            if hour >= 13:
-                actual_minute = minute - 90  # adjust for lunch break
-                if actual_minute < 0:
-                    actual_minute += 60
-                    hour -= 1
-            else:
-                actual_minute = minute % 60
-        else:
-            actual_minute = minute % 60
-
-        # Cap trading hours: 09:00-11:30, 13:00-15:00
-        total_trading_minutes = 240  # 4 hours
+        # Format date as minute bars for a trading day.
+        # Cap trading hours: 09:00-11:30, 13:00-15:00 (4 hours).
+        # 将日期格式化为交易日的分钟 K 线。
+        # 限制交易时间：09:00-11:30, 13:00-15:00（4 小时）。
+        total_trading_minutes = 240
         effective_minute = i % total_trading_minutes
         market_hour = 9 + effective_minute // 60
         market_min = effective_minute % 60
@@ -60,7 +53,7 @@ def generate_bars(n_bars=5000, start_price=450.0, volatility=0.001):
 
         hour_str = f"{market_hour:02d}"
         min_str = f"{market_min:02d}"
-        date_str = f"2026-06-{(day % 28) + 1:02d} {hour_str}:{min_str}:00"
+        date_str = f"2026-06-{(i // 240) % 28 + 1:02d} {hour_str}:{min_str}:00"
 
         bars.append({
             "date": date_str,
